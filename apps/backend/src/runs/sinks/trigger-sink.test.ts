@@ -580,6 +580,22 @@ describe("TriggerSink run events", () => {
     expect(eventRows()[0][0]).toMatchObject({ status: "error" });
   });
 
+  it("marks the run truncated on the very next flush after the ceiling is hit, not only at the end", async () => {
+    const sink = new TriggerSink({
+      triggerId: "trigger-1",
+      flushIntervalMs: 100,
+    });
+    const events = new RunEventRecorder({ runId: "run-1", ceiling: 1 });
+    await sink.onStart({ runId: "run-1", messages: [], events });
+    events.open(null, { type: "text" });
+    events.open(null, { type: "text" });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    const row = updates().find((u) => u.table === triggerRunTable);
+    expect(row?.set).toEqual({ eventsTruncated: true });
+  });
+
   it("marks the run when its timeline hit the event ceiling", async () => {
     const sink = new TriggerSink({
       triggerId: "trigger-1",

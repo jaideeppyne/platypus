@@ -191,13 +191,21 @@ export class TriggerSink implements RunSink {
       .where(eq(triggerRunTable.id, ctx.runId));
   }
 
-  /** One scheduled flush: the latest stats, then the events since the last. */
+  /**
+   * One scheduled flush: the latest stats — and the run's truncation marker
+   * the moment the ceiling is hit, so a reader polling mid-run sees the run
+   * marked, not only the node — then the events since the last flush.
+   */
   private async flush(): Promise<void> {
     const triggerStats = toTriggerRunStats(this.latestStats);
-    if (triggerStats != null) {
+    const truncated = this.events?.eventsTruncated ?? false;
+    if (triggerStats != null || truncated) {
       await db
         .update(triggerRunTable)
-        .set({ stats: triggerStats })
+        .set({
+          ...(triggerStats != null ? { stats: triggerStats } : {}),
+          ...(truncated ? { eventsTruncated: true } : {}),
+        })
         .where(eq(triggerRunTable.id, this.runId));
     }
     await this.flushEvents();

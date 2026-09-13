@@ -56,10 +56,10 @@ const TriggerRunDetailPage = ({
   const { user } = useAuth();
   const backendUrl = useBackendUrl();
 
-  // What the page has accumulated so far, across polls. A ref rather than
-  // state: the fetcher reads it to decide what to ask for, and SWR's returned
-  // data is what renders.
-  const held = useRef<RunEvent[]>([]);
+  // The events the page has accumulated so far, across polls. A ref rather
+  // than state: the fetcher reads it to decide what to ask for, and SWR's
+  // returned data is what renders.
+  const heldEvents = useRef<RunEvent[]>([]);
 
   const key =
     backendUrl && user
@@ -71,12 +71,12 @@ const TriggerRunDetailPage = ({
 
   const fetchIncrementally = useCallback(
     async (url: string): Promise<TriggerRunDetailResponse> => {
-      const sinceSeq = nextSinceSeq(held.current);
+      const sinceSeq = nextSinceSeq(heldEvents.current);
       const page = (await fetcher(
-        `${url}?sinceSeq=${sinceSeq}`,
+        sinceSeq === undefined ? url : `${url}?sinceSeq=${sinceSeq}`,
       )) as TriggerRunDetailResponse;
-      held.current = mergeRunEvents(held.current, page.events);
-      return { run: page.run, events: held.current };
+      heldEvents.current = mergeRunEvents(heldEvents.current, page.events);
+      return { run: page.run, events: heldEvents.current };
     },
     [],
   );
@@ -130,7 +130,7 @@ const TriggerRunDetailPage = ({
                 run={data.run}
                 orgId={orgId}
                 workspaceId={workspaceId}
-                detailHref={null}
+                linkToDetail={false}
               />
             </div>
 

@@ -172,7 +172,7 @@ describe("TriggerRunDetailPage", () => {
     expect(screen.getByText("Three cards moved to Done.")).toBeInTheDocument();
     // The first read asks for the whole timeline.
     expect(state.urls[0]).toBe(
-      "https://backend.example/organizations/org-1/workspaces/ws-1/trigger-runs/run-1?sinceSeq=-1",
+      "https://backend.example/organizations/org-1/workspaces/ws-1/trigger-runs/run-1",
     );
     // The row heading the page does not link to the page it is on.
     expect(screen.queryByLabelText("View run")).not.toBeInTheDocument();

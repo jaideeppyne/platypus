@@ -103,26 +103,22 @@ const formatDuration = (run: TriggerRunWithTrigger) => {
  * One run in the workspace-wide Trigger runs list. The list mixes runs from
  * every Trigger, so the row names — and links to — the Trigger it came from;
  * everything else is the per-run detail an Operator already reads. The same
- * row heads the run detail page, which passes `detailHref: null` so the row
+ * row heads the run detail page, which turns `linkToDetail` off so the row
  * does not offer a link to the page it is already on.
  */
 export const TriggerRunRow = ({
   run,
   orgId,
   workspaceId,
-  detailHref,
+  linkToDetail = true,
 }: {
   run: TriggerRunWithTrigger;
   orgId: string;
   workspaceId: string;
-  /** Where **View run** leads; `null` hides it. Defaults to the run's page. */
-  detailHref?: string | null;
+  /** Whether the row offers **View run**. Off on the run's own page. */
+  linkToDetail?: boolean;
 }) => {
   const stats = run.stats as TriggerRunStats | null | undefined;
-  const viewHref =
-    detailHref === undefined
-      ? triggerRunDetailHref(orgId, workspaceId, run.id)
-      : detailHref;
 
   const handleCopyRunId = async () => {
     try {
@@ -260,7 +256,7 @@ export const TriggerRunRow = ({
         </div>
         <div className="flex items-center shrink-0">
           {/* A suppressed firing never ran, so it has no timeline to open. */}
-          {viewHref && run.status !== "suppressed" && (
+          {linkToDetail && run.status !== "suppressed" && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -270,7 +266,7 @@ export const TriggerRunRow = ({
                   aria-label="View run"
                   asChild
                 >
-                  <Link href={viewHref}>
+                  <Link href={triggerRunDetailHref(orgId, workspaceId, run.id)}>
                     <ListTree className="h-4 w-4" />
                   </Link>
                 </Button>

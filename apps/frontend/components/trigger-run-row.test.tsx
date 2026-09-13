@@ -51,7 +51,7 @@ describe("TriggerRunRow", () => {
         run={run()}
         orgId="org-1"
         workspaceId="ws-1"
-        detailHref={null}
+        linkToDetail={false}
       />,
     );
 

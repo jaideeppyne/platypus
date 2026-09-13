@@ -168,7 +168,16 @@ describe("mergeRunEvents", () => {
 
 describe("nextSinceSeq", () => {
   it("asks for everything when nothing is held", () => {
-    expect(nextSinceSeq([])).toBe(-1);
+    expect(nextSinceSeq([])).toBeUndefined();
+  });
+
+  it("asks for everything while the very first event is still open", () => {
+    expect(
+      nextSinceSeq([
+        event({ id: "a", seq: 0, status: "running", durationMs: null }),
+        event({ id: "b", seq: 1 }),
+      ]),
+    ).toBeUndefined();
   });
 
   it("asks from the newest sequence when nothing is running", () => {

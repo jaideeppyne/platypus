@@ -137,11 +137,16 @@ export const mergeRunEvents = (
  * and patched when it closes, and the endpoint filters by sequence number —
  * so the page has to ask from just below its OLDEST still-running event, not
  * from the newest event it has, or the patches never reach it. With nothing
- * running, the newest sequence number is enough. `-1` asks for everything.
+ * running, the newest sequence number is enough. `undefined` asks for
+ * everything: with nothing held, or with the very first event still open,
+ * there is no sequence number to read from.
  */
-export const nextSinceSeq = (events: RunEvent[]): number => {
-  if (events.length === 0) return -1;
+export const nextSinceSeq = (events: RunEvent[]): number | undefined => {
+  if (events.length === 0) return undefined;
   const running = events.filter((e) => e.status === "running");
-  if (running.length > 0) return Math.min(...running.map((e) => e.seq)) - 1;
+  if (running.length > 0) {
+    const oldest = Math.min(...running.map((e) => e.seq));
+    return oldest === 0 ? undefined : oldest - 1;
+  }
   return Math.max(...events.map((e) => e.seq));
 };

@@ -8,6 +8,7 @@ import {
   type RunEventType,
 } from "@platypus/schemas";
 import type { PlatypusUIMessage } from "../types.ts";
+import type { RunStatus } from "./types.ts";
 import { DELEGATE_TOOL_NAME } from "../tools/turn-tool-names.ts";
 
 /**
@@ -414,11 +415,17 @@ const RUN_EVENT_SCOPE: unique symbol = Symbol("platypus.runEventScope");
 
 type ScopedOptions = { [RUN_EVENT_SCOPE]?: RunEventScope };
 
+/** A tool's execute options as a plain record, or nothing if they are not one. */
+const optionsRecord = (
+  options: unknown,
+): (Record<string, unknown> & ScopedOptions) | undefined =>
+  typeof options === "object" && options !== null
+    ? (options as Record<string, unknown> & ScopedOptions)
+    : undefined;
+
 /** The scope a wrapper attached to a tool's execute options, if any. */
 export const runEventScopeOf = (options: unknown): RunEventScope | undefined =>
-  typeof options === "object" && options !== null
-    ? (options as ScopedOptions)[RUN_EVENT_SCOPE]
-    : undefined;
+  optionsRecord(options)?.[RUN_EVENT_SCOPE];
 
 /**
  * Wraps each locally-executed tool so its event is open before it runs and its
@@ -435,20 +442,18 @@ export const wrapToolsWithRunEvents = (
   scope: RunEventScope,
 ): Record<string, Tool> => {
   const wrapped: Record<string, Tool> = {};
-  for (const [name, t] of Object.entries(tools)) {
-    const execute = (t as { execute?: unknown }).execute;
+  for (const [name, tool] of Object.entries(tools)) {
+    const execute = (tool as { execute?: unknown }).execute;
     if (typeof execute !== "function") {
-      wrapped[name] = t;
+      wrapped[name] = tool;
       continue;
     }
     const runExecute = execute as (args: unknown, options: unknown) => unknown;
     wrapped[name] = {
-      ...t,
+      ...tool,
       execute: (args: unknown, options: unknown) => {
-        const toolCallId =
-          typeof options === "object" && options !== null
-            ? (options as { toolCallId?: unknown }).toolCallId
-            : undefined;
+        const given = optionsRecord(options);
+        const toolCallId = given?.toolCallId;
         const eventId =
           typeof toolCallId === "string"
             ? scope.recorder.openKeyed(
@@ -458,9 +463,7 @@ export const wrapToolsWithRunEvents = (
               )
             : null;
         const scoped: ScopedOptions & Record<string, unknown> = {
-          ...(typeof options === "object" && options !== null
-            ? (options as Record<string, unknown>)
-            : {}),
+          ...given,
           // With no event of its own (the ceiling was hit), a tool's children
           // hang off whatever this scope hangs off — still recorded, still
           // marked truncated on the run.
@@ -469,7 +472,7 @@ export const wrapToolsWithRunEvents = (
             parentEventId: eventId ?? scope.parentEventId,
           },
         };
-        return runExecute.call(t, args, scoped);
+        return runExecute.call(tool, args, scoped);
       },
     };
   }
@@ -478,7 +481,7 @@ export const wrapToolsWithRunEvents = (
 
 /** The run's terminal status, as its still-open events are closed with it. */
 export const eventStatusForRun = (
-  status: "succeeded" | "failed" | "cancelled" | "running",
+  status: RunStatus,
 ): Exclude<RunEventStatus, "running"> => {
   switch (status) {
     case "succeeded":

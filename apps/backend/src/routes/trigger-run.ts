@@ -46,7 +46,7 @@ const listQuerySchema = z.object({
  * timeline.
  */
 const detailQuerySchema = z.object({
-  sinceSeq: z.coerce.number().int().min(-1).optional(),
+  sinceSeq: z.coerce.number().int().min(0).optional(),
 });
 
 /** Renders a validator failure as the `ValidationError` the central seam maps. */
@@ -75,6 +75,30 @@ const rejectQuery = (result: {
   );
 };
 
+/**
+ * The run as its list row reads it, joined to its Trigger for the name.
+ *
+ * Explicit columns, deliberately, and two are left out on purpose: the list
+ * must never select a run's `finalText` (an answer per row is a page of prose
+ * nobody asked for) and must never touch `trigger_run_event` — a run's
+ * timeline can hold thousands of rows, and the list is polled every ten
+ * seconds by every open tab. The run detail extends this projection with the
+ * final text and reads the events in its own query (#647).
+ */
+const runRowColumns = {
+  id: triggerRunTable.id,
+  triggerId: triggerRunTable.triggerId,
+  triggerName: triggerTable.name,
+  status: triggerRunTable.status,
+  eventType: triggerRunTable.eventType,
+  eventData: triggerRunTable.eventData,
+  startedAt: triggerRunTable.startedAt,
+  completedAt: triggerRunTable.completedAt,
+  errorMessage: triggerRunTable.errorMessage,
+  stats: triggerRunTable.stats,
+  createdAt: triggerRunTable.createdAt,
+};
+
 /** List runs across the workspace, newest first. */
 triggerRun.get(
   "/",
@@ -92,28 +116,10 @@ triggerRun.get(
     // Joining each run to its Trigger is what scopes the listing: a run whose
     // Trigger lives in another Workspace is unreachable here regardless of the
     // `triggerId` asked for. The join also carries the Trigger's name, which
-    // every row needs now the list mixes Triggers.
-    //
-    // Explicit columns, deliberately, and two are left out on purpose: the
-    // list must never select a run's `finalText` (an answer per row is a page
-    // of prose nobody asked for) and must never touch `trigger_run_event` —
-    // a run's timeline can hold thousands of rows, and this list is polled
-    // every ten seconds by every open tab. The run detail below is the one
-    // read for both (#647).
+    // every row needs now the list mixes Triggers. The projection is the
+    // shared one above — read its note before adding a column.
     const results = await db
-      .select({
-        id: triggerRunTable.id,
-        triggerId: triggerRunTable.triggerId,
-        triggerName: triggerTable.name,
-        status: triggerRunTable.status,
-        eventType: triggerRunTable.eventType,
-        eventData: triggerRunTable.eventData,
-        startedAt: triggerRunTable.startedAt,
-        completedAt: triggerRunTable.completedAt,
-        errorMessage: triggerRunTable.errorMessage,
-        stats: triggerRunTable.stats,
-        createdAt: triggerRunTable.createdAt,
-      })
+      .select(runRowColumns)
       .from(triggerRunTable)
       .innerJoin(triggerTable, eq(triggerRunTable.triggerId, triggerTable.id))
       .where(
@@ -154,19 +160,9 @@ triggerRun.get(
     // run that does not exist here.
     const [run] = await db
       .select({
-        id: triggerRunTable.id,
-        triggerId: triggerRunTable.triggerId,
-        triggerName: triggerTable.name,
-        status: triggerRunTable.status,
-        eventType: triggerRunTable.eventType,
-        eventData: triggerRunTable.eventData,
-        startedAt: triggerRunTable.startedAt,
-        completedAt: triggerRunTable.completedAt,
-        errorMessage: triggerRunTable.errorMessage,
-        stats: triggerRunTable.stats,
+        ...runRowColumns,
         finalText: triggerRunTable.finalText,
         eventsTruncated: triggerRunTable.eventsTruncated,
-        createdAt: triggerRunTable.createdAt,
       })
       .from(triggerRunTable)
       .innerJoin(triggerTable, eq(triggerRunTable.triggerId, triggerTable.id))
