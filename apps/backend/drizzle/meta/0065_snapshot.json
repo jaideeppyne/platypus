@@ -1,6 +1,6 @@
 {
-  "id": "4f28b2f2-c119-4cd4-ad2c-5a0c02002bb6",
-  "prevId": "4bb288f1-3bbc-46a5-9f16-bed86f6f4afe",
+  "id": "b8e5f9d0-58a8-4b91-9b9a-3b42b7f7d8e1",
+  "prevId": "4f28b2f2-c119-4cd4-ad2c-5a0c02002bb6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3255,6 +3255,19 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "disable_model_invocation": {
+          "name": "disable_model_invocation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "argument_hint": {
+          "name": "argument_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
