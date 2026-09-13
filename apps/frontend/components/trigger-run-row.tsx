@@ -8,6 +8,7 @@ import {
   Database,
   Footprints,
   Gauge,
+  ListTree,
   Loader2,
   MessageSquare,
   Wrench,
@@ -58,6 +59,15 @@ const statusBadge = (status: TriggerRunStatus) => {
           {TRIGGER_RUN_STATUS_LABELS.running}
         </Badge>
       );
+    // Not a failure: someone stopped it, nothing faulted (#647). Drawn in the
+    // neutral variant so it never reads as a crash.
+    case "cancelled":
+      return (
+        <Badge variant="outline">
+          <Ban className="w-3 h-3 mr-1" />
+          {TRIGGER_RUN_STATUS_LABELS.cancelled}
+        </Badge>
+      );
     case "suppressed":
       return (
         <Badge variant="destructive">
@@ -73,6 +83,13 @@ const statusBadge = (status: TriggerRunStatus) => {
   }
 };
 
+/** The run detail page's address, where the list's rows lead. */
+export const triggerRunDetailHref = (
+  orgId: string,
+  workspaceId: string,
+  runId: string,
+) => `/${orgId}/workspace/${workspaceId}/trigger-runs/${runId}`;
+
 const formatDuration = (run: TriggerRunWithTrigger) => {
   if (!run.completedAt) return null;
   const ms =
@@ -85,18 +102,27 @@ const formatDuration = (run: TriggerRunWithTrigger) => {
 /**
  * One run in the workspace-wide Trigger runs list. The list mixes runs from
  * every Trigger, so the row names — and links to — the Trigger it came from;
- * everything else is the per-run detail an Operator already reads.
+ * everything else is the per-run detail an Operator already reads. The same
+ * row heads the run detail page, which passes `detailHref: null` so the row
+ * does not offer a link to the page it is already on.
  */
 export const TriggerRunRow = ({
   run,
   orgId,
   workspaceId,
+  detailHref,
 }: {
   run: TriggerRunWithTrigger;
   orgId: string;
   workspaceId: string;
+  /** Where **View run** leads; `null` hides it. Defaults to the run's page. */
+  detailHref?: string | null;
 }) => {
   const stats = run.stats as TriggerRunStats | null | undefined;
+  const viewHref =
+    detailHref === undefined
+      ? triggerRunDetailHref(orgId, workspaceId, run.id)
+      : detailHref;
 
   const handleCopyRunId = async () => {
     try {
@@ -232,20 +258,41 @@ export const TriggerRunRow = ({
             )}
           </div>
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              className="text-muted-foreground shrink-0"
-              variant="ghost"
-              size="icon"
-              aria-label="Copy run id"
-              onClick={handleCopyRunId}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Copy run id</TooltipContent>
-        </Tooltip>
+        <div className="flex items-center shrink-0">
+          {/* A suppressed firing never ran, so it has no timeline to open. */}
+          {viewHref && run.status !== "suppressed" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  className="text-muted-foreground"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="View run"
+                  asChild
+                >
+                  <Link href={viewHref}>
+                    <ListTree className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>View run</TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className="text-muted-foreground"
+                variant="ghost"
+                size="icon"
+                aria-label="Copy run id"
+                onClick={handleCopyRunId}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy run id</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
     </div>
   );
