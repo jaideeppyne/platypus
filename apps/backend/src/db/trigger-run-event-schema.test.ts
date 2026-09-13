@@ -37,7 +37,7 @@ describe("trigger_run_event cascades from its run", () => {
 
   it("ships the same cascade in the migration production applies", () => {
     const migration = readFileSync(
-      new URL("../../drizzle/0065_trigger_run_events.sql", import.meta.url),
+      new URL("../../drizzle/0066_trigger_run_events.sql", import.meta.url),
       "utf8",
     );
     expect(migration).toMatch(
