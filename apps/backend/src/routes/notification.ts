@@ -1,11 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../index.ts";
-import {
-  notification as notificationTable,
-  notificationRead as notificationReadTable,
-  agent as agentTable,
-} from "../db/schema.ts";
 import { requireAuth } from "../middleware/authentication.ts";
 import {
   requireOrgAccess,
@@ -16,6 +10,9 @@ import {
   markRead,
   markAllRead,
   deleteNotification,
+  listWorkspaceNotifications,
+  unreadNotificationCount,
+  unreadNotificationIds,
 } from "../services/notification.ts";
 import { NotFoundError } from "../errors.ts";
 import type { Variables } from "../server.ts";
@@ -40,32 +37,13 @@ notification.get(
     const offset = Math.max(parseInt(c.req.query("offset") || "0", 10) || 0, 0);
     const baseUrl = getOrigin(c);
 
-    const results = await db
-      .select({
-        id: notificationTable.id,
-        workspaceId: notificationTable.workspaceId,
-        agentId: notificationTable.agentId,
-        title: notificationTable.title,
-        body: notificationTable.body,
-        createdAt: notificationTable.createdAt,
-        updatedAt: notificationTable.updatedAt,
-        agentName: agentTable.name,
-        agentAvatarKey: agentTable.avatarKey,
-        readAt: notificationReadTable.readAt,
-      })
-      .from(notificationTable)
-      .innerJoin(agentTable, eq(notificationTable.agentId, agentTable.id))
-      .leftJoin(
-        notificationReadTable,
-        and(
-          eq(notificationReadTable.notificationId, notificationTable.id),
-          eq(notificationReadTable.userId, user.id),
-        ),
-      )
-      .where(eq(notificationTable.workspaceId, workspaceId))
-      .orderBy(desc(notificationTable.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const results = await listWorkspaceNotifications(
+      db,
+      workspaceId,
+      user.id,
+      limit,
+      offset,
+    );
 
     return c.json({
       results: results.map((r) => ({
@@ -94,24 +72,7 @@ notification.get(
     const { workspaceId } = workspaceScopeOf(c);
     const user = c.get("user")!;
 
-    const result = await db
-      .select({
-        count: sql<number>`count(*)::int`,
-      })
-      .from(notificationTable)
-      .leftJoin(
-        notificationReadTable,
-        and(
-          eq(notificationReadTable.notificationId, notificationTable.id),
-          eq(notificationReadTable.userId, user.id),
-        ),
-      )
-      .where(
-        and(
-          eq(notificationTable.workspaceId, workspaceId),
-          isNull(notificationReadTable.id),
-        ),
-      );
+    const result = await unreadNotificationCount(db, workspaceId, user.id);
 
     return c.json({ count: result[0]?.count ?? 0 });
   },
@@ -149,22 +110,7 @@ notification.post(
     const user = c.get("user")!;
 
     // Get all unread notification IDs
-    const unread = await db
-      .select({ id: notificationTable.id })
-      .from(notificationTable)
-      .leftJoin(
-        notificationReadTable,
-        and(
-          eq(notificationReadTable.notificationId, notificationTable.id),
-          eq(notificationReadTable.userId, user.id),
-        ),
-      )
-      .where(
-        and(
-          eq(notificationTable.workspaceId, workspaceId),
-          isNull(notificationReadTable.id),
-        ),
-      );
+    const unread = await unreadNotificationIds(db, workspaceId, user.id);
 
     if (unread.length > 0) {
       await markAllRead(

@@ -1,7 +1,8 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "../index.ts";
 import {
+  agent as agentTable,
   notification as notificationTable,
   notificationRead as notificationReadTable,
 } from "../db/schema.ts";
@@ -14,6 +15,9 @@ type NotificationContext = {
   workspaceId: string;
   agentId?: string;
 };
+
+const normalizeBody = (body: string) =>
+  body.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
 
 const agentOwnedWhere = (ctx: NotificationContext, id: string) =>
   and(
@@ -33,7 +37,7 @@ export const createNotification = async (
       workspaceId: ctx.workspaceId,
       agentId: ctx.agentId,
       title: data.title ?? null,
-      body: data.body.replace(/\\n/g, "\n").replace(/\\t/g, "\t"),
+      body: normalizeBody(data.body),
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -70,7 +74,7 @@ export const updateNotification = async (
     .set({
       ...(data.title !== undefined && { title: data.title }),
       ...(data.body !== undefined && {
-        body: data.body.replace(/\\n/g, "\n").replace(/\\t/g, "\t"),
+        body: normalizeBody(data.body),
       }),
       updatedAt: new Date(),
     })
@@ -105,12 +109,6 @@ export const deleteNotification = async (
   return true;
 };
 
-export const requireNotification = (
-  database: Database,
-  id: string,
-  workspaceId: string,
-) => resolveOwned(database, "notification", id, workspaceId);
-
 export const markRead = async (
   database: Database,
   ctx: { orgId: string; workspaceId: string },
@@ -141,19 +139,108 @@ export const markAllRead = async (
   notificationIds: string[],
   userId: string,
 ) => {
-  if (notificationIds.length === 0) return;
-  await database
-    .insert(notificationReadTable)
-    .values(
-      notificationIds.map((notificationId) => ({
-        id: nanoid(),
-        notificationId,
-        userId,
-      })),
-    );
+  const owned =
+    notificationIds.length === 0
+      ? []
+      : await database
+          .select({ id: notificationTable.id })
+          .from(notificationTable)
+          .where(
+            and(
+              eq(notificationTable.workspaceId, ctx.workspaceId),
+              inArray(notificationTable.id, notificationIds),
+            ),
+          );
+  if (owned.length === 0) return;
+  const ids = owned.map(({ id }) => id);
+  await database.insert(notificationReadTable).values(
+    ids.map((notificationId) => ({
+      id: nanoid(),
+      notificationId,
+      userId,
+    })),
+  );
   dispatchEvent(ctx.orgId, ctx.workspaceId, "notification.read", {
-    notificationIds,
+    notificationIds: ids,
     userId,
     bulk: true,
   });
 };
+
+export const listWorkspaceNotifications = (
+  database: Database,
+  workspaceId: string,
+  userId: string,
+  limit: number,
+  offset: number,
+) =>
+  database
+    .select({
+      id: notificationTable.id,
+      workspaceId: notificationTable.workspaceId,
+      agentId: notificationTable.agentId,
+      title: notificationTable.title,
+      body: notificationTable.body,
+      createdAt: notificationTable.createdAt,
+      updatedAt: notificationTable.updatedAt,
+      agentName: agentTable.name,
+      agentAvatarKey: agentTable.avatarKey,
+      readAt: notificationReadTable.readAt,
+    })
+    .from(notificationTable)
+    .innerJoin(agentTable, eq(notificationTable.agentId, agentTable.id))
+    .leftJoin(
+      notificationReadTable,
+      and(
+        eq(notificationReadTable.notificationId, notificationTable.id),
+        eq(notificationReadTable.userId, userId),
+      ),
+    )
+    .where(eq(notificationTable.workspaceId, workspaceId))
+    .orderBy(desc(notificationTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+export const unreadNotificationCount = (
+  database: Database,
+  workspaceId: string,
+  userId: string,
+) =>
+  database
+    .select({ count: sql<number>`count(*)::int` })
+    .from(notificationTable)
+    .leftJoin(
+      notificationReadTable,
+      and(
+        eq(notificationReadTable.notificationId, notificationTable.id),
+        eq(notificationReadTable.userId, userId),
+      ),
+    )
+    .where(
+      and(
+        eq(notificationTable.workspaceId, workspaceId),
+        isNull(notificationReadTable.id),
+      ),
+    );
+
+export const unreadNotificationIds = (
+  database: Database,
+  workspaceId: string,
+  userId: string,
+) =>
+  database
+    .select({ id: notificationTable.id })
+    .from(notificationTable)
+    .leftJoin(
+      notificationReadTable,
+      and(
+        eq(notificationReadTable.notificationId, notificationTable.id),
+        eq(notificationReadTable.userId, userId),
+      ),
+    )
+    .where(
+      and(
+        eq(notificationTable.workspaceId, workspaceId),
+        isNull(notificationReadTable.id),
+      ),
+    );

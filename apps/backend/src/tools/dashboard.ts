@@ -46,7 +46,10 @@ export function createDashboardTools(
   });
   const getWidgetTool = tool({
     description: "Get a single widget by ID including its full data",
-    inputSchema: z.object({ dashboardId: z.string(), widgetId: z.string() }),
+    inputSchema: z.object({
+      dashboardId: z.string().describe("The ID of the dashboard"),
+      widgetId: z.string().describe("The ID of the widget"),
+    }),
     execute: async ({ dashboardId, widgetId }) =>
       asToolResult(async () =>
         getWidget(db, dashboardId, widgetId, workspaceId),
@@ -56,10 +59,14 @@ export function createDashboardTools(
     description:
       "Update the data of a widget by ID. You must provide the widget's type — if it doesn't match the stored type the update is rejected.",
     inputSchema: z.object({
-      dashboardId: z.string(),
-      widgetId: z.string(),
-      type: agentWritableWidgetTypeSchema,
-      data: agentWritableWidgetDataSchema,
+      dashboardId: z.string().describe("The ID of the dashboard"),
+      widgetId: z.string().describe("The ID of the widget to update"),
+      type: agentWritableWidgetTypeSchema.describe(
+        "The widget type — must match the widget's existing type",
+      ),
+      data: agentWritableWidgetDataSchema.describe(
+        "The new data for the widget — must match the widget's type",
+      ),
     }),
     execute: async ({ dashboardId, widgetId, type, data }) =>
       asToolResult(async () => {
