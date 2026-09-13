@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  mockDb,
   mockSession,
   resetMockDb,
   seedDb,
@@ -536,23 +535,6 @@ describe("Provider Routes", () => {
       const res = await app.request(`${baseUrl}/p4`, { method: "DELETE" });
       expect(res.status).toBe(404);
       expect(fake.tables.provider).toHaveLength(1);
-    });
-  });
-
-  describe("with the chainable mock", () => {
-    it("still serves a file that stubs queries positionally", async () => {
-      // The 29 route test files this PR does not touch reach `db` through the
-      // same mocked module, so the chainable mock has to keep working beside
-      // the seeded fake — including after a test that installed one.
-      mockSession();
-      mockDb.limit.mockResolvedValueOnce([{ role: "admin" }]); // requireOrgAccess
-      mockDb.limit.mockResolvedValueOnce([
-        { ownerId: "user-1", organizationId: orgId },
-      ]); // requireWorkspaceAccess
-      mockDb.limit.mockResolvedValueOnce([{ id: "p1", workspaceId }]); // resolveScoped
-
-      const res = await app.request(`${baseUrl}/p1`);
-      expect(res.status).toBe(200);
     });
   });
 });

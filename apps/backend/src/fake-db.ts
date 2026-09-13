@@ -29,12 +29,8 @@ export type ColumnRef = { table: string; name: string };
 
 /** A comparison marker standing in for a Drizzle operator's `SQL` fragment. */
 export type Marker =
-  | {
-      op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
-      column: ColumnRef;
-      value: unknown;
-    }
-  | { op: "isNull" | "isNotNull"; column: ColumnRef }
+  | { op: "eq" | "gt" | "lte"; column: ColumnRef; value: unknown }
+  | { op: "isNull"; column: ColumnRef }
   | { op: "inArray" | "notInArray"; column: ColumnRef; values: unknown[] }
   | { op: "and" | "or"; conditions: Condition[] }
   | { op: "sql"; strings: readonly string[]; values: unknown[] };
@@ -88,28 +84,22 @@ const refOf = (column: unknown): ColumnRef => {
 };
 
 /**
- * The Drizzle operators as introspectable markers. A test file mocks
- * `drizzle-orm` with these — spread over `...actual` so `pgTable` and friends
- * stay real — and this module's fake handle then evaluates what the code under
- * test actually asked for.
+ * The Drizzle operators as introspectable markers — the set the code under
+ * test actually composes. A test file mocks `drizzle-orm` with these — spread
+ * over `...actual` so `pgTable` and friends stay real — and this module's fake
+ * handle then evaluates what the query asked for. An operator that no query
+ * issues yet is deliberately absent: adding one here without a query to read it
+ * is surface nothing exercises.
  */
 export const markerOperators = () => ({
   eq: (column: unknown, value: unknown) =>
     ({ op: "eq", column: refOf(column), value }) as Marker,
-  ne: (column: unknown, value: unknown) =>
-    ({ op: "ne", column: refOf(column), value }) as Marker,
   gt: (column: unknown, value: unknown) =>
     ({ op: "gt", column: refOf(column), value }) as Marker,
-  gte: (column: unknown, value: unknown) =>
-    ({ op: "gte", column: refOf(column), value }) as Marker,
-  lt: (column: unknown, value: unknown) =>
-    ({ op: "lt", column: refOf(column), value }) as Marker,
   lte: (column: unknown, value: unknown) =>
     ({ op: "lte", column: refOf(column), value }) as Marker,
   isNull: (column: unknown) =>
     ({ op: "isNull", column: refOf(column) }) as Marker,
-  isNotNull: (column: unknown) =>
-    ({ op: "isNotNull", column: refOf(column) }) as Marker,
   inArray: (column: unknown, values: unknown[]) =>
     ({ op: "inArray", column: refOf(column), values }) as Marker,
   notInArray: (column: unknown, values: unknown[]) =>
@@ -192,21 +182,9 @@ const satisfies = (resolve: Resolve, condition: Condition): boolean => {
       return condition.conditions.some((c) => satisfies(resolve, c));
     case "eq":
       return resolve(condition.column) === operandOf(condition.value, resolve);
-    case "ne":
-      return resolve(condition.column) !== operandOf(condition.value, resolve);
     case "gt":
       return (
         (resolve(condition.column) as number) >
-        (operandOf(condition.value, resolve) as number)
-      );
-    case "gte":
-      return (
-        (resolve(condition.column) as number) >=
-        (operandOf(condition.value, resolve) as number)
-      );
-    case "lt":
-      return (
-        (resolve(condition.column) as number) <
         (operandOf(condition.value, resolve) as number)
       );
     case "lte":
@@ -216,8 +194,6 @@ const satisfies = (resolve: Resolve, condition: Condition): boolean => {
       );
     case "isNull":
       return resolve(condition.column) == null;
-    case "isNotNull":
-      return resolve(condition.column) != null;
     case "inArray":
       return condition.values.includes(resolve(condition.column));
     case "notInArray":
@@ -290,8 +266,6 @@ export type FakeDb = {
   handle: unknown;
   /** The seeded rows, live — assert on these to see what a write did. */
   tables: Store;
-  /** Adds rows to the store after construction. */
-  seed: (rows: Store) => void;
   /** `db.execute()`, a spy resolving to `{ rowCount: 0 }` unless restubbed. */
   execute: Mock<(...args: unknown[]) => unknown>;
 };
@@ -312,23 +286,23 @@ const uniqueViolation = (constraint: string) => {
 };
 
 /**
- * Builds an in-memory Drizzle stand-in over `seed`, keyed by Postgres table
+ * Builds an in-memory Drizzle stand-in over `initialRows`, keyed by Postgres table
  * name (`seedDb({ workspace: [...], provider: [...] })`). Tables not seeded are
  * empty rather than an error, so a query for a resource a test never created
  * simply finds nothing.
  *
- * Covers `select`/`from`/`innerJoin`/`leftJoin`/`where`/`orderBy`/`limit`/
- * `offset`, `insert`/`values`/`returning`, `update`/`set`/`where`/`returning`,
+ * Covers `select`/`from`/`innerJoin`/`where`/`orderBy`/`limit`,
+ * `insert`/`values`/`returning`, `update`/`set`/`where`/`returning`,
  * `delete`/`where`/`returning`, `execute`, and a `transaction` that really
  * rolls back: the callback gets a handle bound to a staging copy merged back
  * only on success, so code that used the outer `db` where it meant `tx` fails
  * rather than passing quietly.
  */
 export const createFakeDb = (
-  seed: Store = {},
+  initialRows: Store = {},
   options: FakeDbOptions = {},
 ): FakeDb => {
-  const committed = normaliseStore(seed);
+  const committed = normaliseStore(initialRows);
   const execute = vi.fn((..._args: unknown[]) =>
     Promise.resolve({ rowCount: 0, rows: [] }),
   );
@@ -357,19 +331,43 @@ export const createFakeDb = (
         } else if (isColumn(value)) {
           out[key] = resolve(refOf(value));
         } else {
-          out[key] = undefined;
+          // Silently projecting `undefined` would let a query select something
+          // this fake cannot compute (an aggregate, say) and still pass.
+          throw new Error(
+            `fake db cannot project the selection "${key}" — it is neither a column nor count()`,
+          );
         }
       }
       return out;
     };
 
+    /**
+     * What an `insert`/`update`/`delete` resolves to: the rows it touched
+     * through `.returning(...)`, or nothing when the caller just awaits the
+     * write. One shape for all three, since Drizzle gives them one.
+     */
+    const writeResult = (touched: Row[]) => ({
+      returning(selection?: Record<string, unknown>) {
+        return Promise.resolve().then(() =>
+          touched.map((row) =>
+            project(row, flatResolver(row), selection, touched.length),
+          ),
+        );
+      },
+      then(
+        onFulfilled?: (result: unknown) => unknown,
+        onRejected?: (error: unknown) => unknown,
+      ) {
+        return Promise.resolve(undefined).then(onFulfilled, onRejected);
+      },
+    });
+
     const select = (selection?: Record<string, unknown>) => {
       let table: unknown;
       let condition: Condition;
       let take = Infinity;
-      let skip = 0;
       let order: OrderMarker[] = [];
-      const joins: { table: unknown; on: Condition; inner: boolean }[] = [];
+      const joins: { table: unknown; on: Condition }[] = [];
 
       const rows = (): Row[] => {
         const base = rowsFor(table);
@@ -387,11 +385,6 @@ export const createFakeDb = (
                 join.on,
               ),
             );
-            if (partners.length === 0) {
-              if (!join.inner)
-                next.push({ ...row, [nameOf(join.table)]: null });
-              continue;
-            }
             for (const partner of partners) {
               next.push({ ...row, [nameOf(join.table)]: partner });
             }
@@ -420,7 +413,7 @@ export const createFakeDb = (
           return [project({}, flatResolver({}), selection, matched.length)];
         }
 
-        const page = matched.slice(skip, skip === 0 ? take : skip + take);
+        const page = matched.slice(0, take);
         return page.map((row) =>
           project(row, resolverFor(row), selection, matched.length),
         );
@@ -432,11 +425,7 @@ export const createFakeDb = (
           return builder;
         },
         innerJoin(t: unknown, on: Condition) {
-          joins.push({ table: t, on, inner: true });
-          return builder;
-        },
-        leftJoin(t: unknown, on: Condition) {
-          joins.push({ table: t, on, inner: false });
+          joins.push({ table: t, on });
           return builder;
         },
         where(c: Condition) {
@@ -449,13 +438,6 @@ export const createFakeDb = (
         },
         limit(n: number) {
           take = n;
-          return builder;
-        },
-        offset(n: number) {
-          skip = n;
-          return builder;
-        },
-        groupBy() {
           return builder;
         },
         then(
@@ -497,28 +479,10 @@ export const createFakeDb = (
 
       return {
         values(values: Row | Row[]) {
-          const valuesBuilder = {
-            returning(selection?: Record<string, unknown>) {
-              return Promise.resolve().then(() =>
-                inserted.map((row) =>
-                  project(row, flatResolver(row), selection, inserted.length),
-                ),
-              );
-            },
-            onConflictDoNothing() {
-              return valuesBuilder;
-            },
-            then(
-              onFulfilled?: (result: unknown) => unknown,
-              onRejected?: (error: unknown) => unknown,
-            ) {
-              return Promise.resolve(undefined).then(onFulfilled, onRejected);
-            },
-          };
-          // Thrown synchronously so a unique violation surfaces where the
+          // Written synchronously so a unique violation surfaces where the
           // caller's `try` is, the way the driver's rejection does.
           write(values);
-          return valuesBuilder;
+          return writeResult(inserted);
         },
       };
     };
@@ -541,21 +505,7 @@ export const createFakeDb = (
         },
         where(condition: Condition) {
           apply(condition);
-          return {
-            returning(selection?: Record<string, unknown>) {
-              return Promise.resolve().then(() =>
-                updated.map((row) =>
-                  project(row, flatResolver(row), selection, updated.length),
-                ),
-              );
-            },
-            then(
-              onFulfilled?: (result: unknown) => unknown,
-              onRejected?: (error: unknown) => unknown,
-            ) {
-              return Promise.resolve(undefined).then(onFulfilled, onRejected);
-            },
-          };
+          return writeResult(updated);
         },
       };
       return builder;
@@ -570,21 +520,7 @@ export const createFakeDb = (
         const kept = rows.filter((row) => !deleted.includes(row));
         rows.length = 0;
         rows.push(...kept);
-        return {
-          returning(selection?: Record<string, unknown>) {
-            return Promise.resolve().then(() =>
-              deleted.map((row) =>
-                project(row, flatResolver(row), selection, deleted.length),
-              ),
-            );
-          },
-          then(
-            onFulfilled?: (result: unknown) => unknown,
-            onRejected?: (error: unknown) => unknown,
-          ) {
-            return Promise.resolve(undefined).then(onFulfilled, onRejected);
-          },
-        };
+        return writeResult(deleted);
       },
     });
 
@@ -610,12 +546,6 @@ export const createFakeDb = (
   return {
     handle: makeHandle(committed),
     tables: committed,
-    seed: (rows: Store) => {
-      for (const [name, value] of Object.entries(rows)) {
-        committed[name] ??= [];
-        committed[name].push(...value.map((row) => ({ ...row })));
-      }
-    },
     execute,
   };
 };

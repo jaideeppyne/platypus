@@ -208,7 +208,7 @@ const { mockDb, mockAuth, dbHandle, fakeRef } = vi.hoisted(() => {
    * The object every module's `import { db }` binds to. It forwards each
    * property access to whichever handle is installed *at call time*, so a test
    * can swap in a seeded fake after the routes have already been imported —
-   * and the 29 route test files that stub the chainable mock keep reaching it.
+   * and every test file that stubs the chainable mock keeps reaching it.
    */
   const handle = new Proxy(
     {},
