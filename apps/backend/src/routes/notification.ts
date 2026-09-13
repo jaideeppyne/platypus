@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { nanoid } from "nanoid";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../index.ts";
 import {
@@ -13,10 +12,13 @@ import {
   requireWorkspaceAccess,
   workspaceScopeOf,
 } from "../middleware/authorization.ts";
-import { requireOwned, deleteOwned } from "../services/workspace-resource.ts";
+import {
+  markRead,
+  markAllRead,
+  deleteNotification,
+} from "../services/notification.ts";
 import { NotFoundError } from "../errors.ts";
 import type { Variables } from "../server.ts";
-import { dispatchEvent } from "../services/event-dispatch.ts";
 import { avatarKeyToUrl } from "../utils/avatar-url.ts";
 import { getOrigin } from "../utils/get-origin.ts";
 
@@ -126,22 +128,11 @@ notification.post(
     const user = c.get("user")!;
     const { orgId, workspaceId } = workspaceScopeOf(c);
 
-    // Verify notification exists in this workspace
-    await requireOwned(db, "notification", notificationId, workspaceId);
-
-    await db
-      .insert(notificationReadTable)
-      .values({
-        id: nanoid(),
-        notificationId,
-        userId: user.id,
-      })
-      .onConflictDoNothing();
-
-    dispatchEvent(orgId, workspaceId, "notification.read", {
-      notificationId,
-      userId: user.id,
-    });
+    if (
+      !(await markRead(db, { orgId, workspaceId }, notificationId, user.id))
+    ) {
+      throw new NotFoundError("Notification not found");
+    }
 
     return c.json({ success: true });
   },
@@ -176,19 +167,12 @@ notification.post(
       );
 
     if (unread.length > 0) {
-      await db.insert(notificationReadTable).values(
-        unread.map((n) => ({
-          id: nanoid(),
-          notificationId: n.id,
-          userId: user.id,
-        })),
+      await markAllRead(
+        db,
+        { orgId, workspaceId },
+        unread.map((n) => n.id),
+        user.id,
       );
-
-      dispatchEvent(orgId, workspaceId, "notification.read", {
-        notificationIds: unread.map((n) => n.id),
-        userId: user.id,
-        bulk: true,
-      });
     }
 
     return c.json({ success: true });
@@ -205,20 +189,15 @@ notification.delete(
     const notificationId = c.req.param("notificationId");
     const { orgId, workspaceId } = workspaceScopeOf(c);
 
-    const deleted = await deleteOwned(
+    const deleted = await deleteNotification(
       db,
-      "notification",
+      { orgId, workspaceId },
       notificationId,
-      workspaceId,
     );
 
     if (!deleted) {
       throw new NotFoundError("Notification not found");
     }
-
-    dispatchEvent(orgId, workspaceId, "notification.dismissed", {
-      notificationId,
-    });
 
     return c.json({ message: "Notification deleted" });
   },
