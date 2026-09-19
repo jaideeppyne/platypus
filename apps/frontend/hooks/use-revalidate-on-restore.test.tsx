@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useRevalidateOnRestore } from "./use-revalidate-on-restore";
+import {
+  RESTORE_THROTTLE_MS,
+  useRevalidateOnRestore,
+} from "./use-revalidate-on-restore";
 
 /** A `pageshow` as the browser fires it; jsdom has no PageTransitionEvent. */
 const pageshow = (persisted: boolean) => {
@@ -56,7 +59,7 @@ describe("useRevalidateOnRestore", () => {
     renderHook(() => useRevalidateOnRestore(revalidate));
 
     pageshow(true);
-    vi.advanceTimersByTime(3_001);
+    vi.advanceTimersByTime(RESTORE_THROTTLE_MS + 1);
     pageshow(true);
 
     expect(revalidate).toHaveBeenCalledTimes(2);

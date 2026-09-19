@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { type HTMLAttributes, useEffect, useRef, useState } from "react";
 import { type BundledLanguage, codeToHtml, type ShikiTransformer } from "shiki";
 
-type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
+type CodeBlockProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> & {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
@@ -59,7 +59,6 @@ export const CodeBlock = ({
   language,
   showLineNumbers = false,
   className,
-  children,
   ...props
 }: CodeBlockProps) => {
   const [html, setHtml] = useState<string>("");
@@ -83,28 +82,21 @@ export const CodeBlock = ({
   return (
     <div
       className={cn(
-        "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
+        "w-full overflow-hidden rounded-md border bg-background text-foreground",
         className,
       )}
       {...props}
     >
-      <div className="relative">
-        <div
-          className="overflow-hidden dark:hidden [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-        <div
-          className="hidden overflow-hidden dark:block [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
-          dangerouslySetInnerHTML={{ __html: darkHtml }}
-        />
-        {children && (
-          <div className="absolute top-2 right-2 flex items-center gap-2">
-            {children}
-          </div>
-        )}
-      </div>
+      <div
+        className="overflow-hidden dark:hidden [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      <div
+        className="hidden overflow-hidden dark:block [&>pre]:m-0 [&>pre]:bg-background! [&>pre]:p-4 [&>pre]:text-foreground! [&>pre]:text-sm [&_code]:font-mono [&_code]:text-sm"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: "this is needed."
+        dangerouslySetInnerHTML={{ __html: darkHtml }}
+      />
     </div>
   );
 };

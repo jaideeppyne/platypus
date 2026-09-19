@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
  * that a browser firing a restore alongside its own focus event — which SWR
  * revalidates on separately — collapses into one request.
  */
-const RESTORE_THROTTLE_MS = 3_000;
+export const RESTORE_THROTTLE_MS = 3_000;
 
 /**
  * Revalidates a read when the page comes back from the back/forward cache.
